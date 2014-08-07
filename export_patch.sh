@@ -1,47 +1,60 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Export a Mercurial patch to git.
 #
 
 
+function usage {
+    echo "Usage: export_patch <hg_repo_dir> <git_repo_dir> <changeset>"
+}
+
 if [ $# -lt 1 ]
 then
-	echo "No changesets specified"
-	exit 1
+    echo "No changesets specified"
+    usage
+    exit 1
 fi
 
+hg_dir=$1
+shift
+git_dir=$1
+shift
+do_git_apply=0
 wd=`pwd`
-HG_DIR="/c/dev/mercurial/DIVAdirector"
-GIT_DIR="/c/dev/divadirector_web"
 
-while (( "$#" ))
+for changeset in $*
 do
-	changeset=$1
-	
-	# Mercurial
-	echo "Exporting patch $changeset from Mercurial"
-	cd $HG_DIR
-	hg export --git -r $changeset > ../$changeset.diff
-	
-	# Git
-	echo "Testing patch apply in git repo"
-	cd $GIT_DIR
-	git apply --ignore-whitespace --check /c/dev/mercurial/$changeset.diff
-	rc=$?
-	echo "Return code for apply check is $rc"
-	if [ $rc -eq 0 ]
-	then
-		# echo "Check was succesful!"
-		echo "Check was succesful, applying patch for reals this time!"
-		git apply --ignore-whitespace /c/dev/mercurial/$changeset.diff
-	else
-		#echo "Check failed."
-		echo "Check failed, you must patch manually."
-	fi
-	
-	shift
+    # Mercurial
+    cd $hg_dir
+    summary=$(hg log -r $changeset | grep "^summary:" | sed 's/^summary: *//')
+    echo -e "\nExporting patch $changeset from Hg, summary: $summary"
+    hg export --git -r $changeset > $changeset.diff
+    
+    # Git
+    echo "Testing patch apply in git repo"
+    cd $git_dir
+    git apply --ignore-whitespace --check $hg_dir/$changeset.diff
+    rc=$?
+    echo "Return code for apply check is $rc"
+    if [ $rc -eq 0 ]
+    then
+        if [ $do_git_apply -eq 1 ]
+        then
+            echo "Check was successful, applying patch for reals this time!"
+            git apply --ignore-whitespace $hg_dir/$changeset.diff
+            rc=$?
+            echo "Return code for apply is $rc"
+        else
+            echo "Check was successful!"
+        fi
+    else
+        echo "Check failed."
+    fi
+    
+    summaries="$summaries\n$changeset: $summary"
+   
 done
 
+echo -e "\nChangeset summaries:\n$summaries"
+
 cd $wd
-
-
